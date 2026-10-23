@@ -327,3 +327,80 @@ while elapsed <= max_wait_seconds:
 >
 > When a conflicting key is observed, we compare the incoming hash against `idempotency_keys.request_hash`. If they do not match, we immediately reject the request with HTTP 422 Unprocessable Content. This prevents idempotency key hijacking or accidental parameter collision."
 
+---
+
+## Phase 4: Ledger Immutability & Automated Reconciliation
+
+### 1. Plain-English Overview
+In medieval accounting, scribes wrote transactions into physical leather-bound ledgers with permanent ink. Tearing out a page or using an ink eraser was considered a criminal act. If an error was made, you did not erase it—you recorded a corrective entry.
+In modern distributed systems, data corruption can happen silently: a database migration bug, a developer manually running an `UPDATE` in pgAdmin, or a server glitch.
+Phase 4 implements two layers of protection:
+- **Append-Only Database Trigger:** We attached a PostgreSQL trigger function to `ledger_entries`. Even if someone connects directly to PostgreSQL with full admin privileges and tries to run `UPDATE` or `DELETE`, PostgreSQL raises an exception and aborts the command.
+- **Automated Reconciliation Engine:** An auditor service that continuously verifies two mathematical invariants across the entire system:
+  1. **Account Balance Invariant:** $\text{Account Balance} = \text{Initial Balance} + \sum \text{Credits} - \sum \text{Debits}$.
+  2. **Double-Entry Invariant:** For every transaction, $\sum \text{Credits} = \sum \text{Debits}$.
+- If even one cent drifts anywhere in the system, reconciliation immediately catches it, logs the discrepancy, and alerts operators.
+
+---
+
+### 2. Walkthrough of the Core File: `app/services/reconciliation.py`
+In `app/services/reconciliation.py` (`CORE LOGIC: understand this file line by line`):
+
+```python
+# 1. Single-query aggregation across all accounts
+account_audit_stmt = (
+    select(
+        Account.id, Account.currency, Account.balance, Account.initial_balance,
+        func.coalesce(func.sum(case((LedgerEntry.direction == "CREDIT", LedgerEntry.amount), else_=0)), 0),
+        func.coalesce(func.sum(case((LedgerEntry.direction == "DEBIT", LedgerEntry.amount), else_=0)), 0),
+    )
+    .outerjoin(LedgerEntry, Account.id == LedgerEntry.account_id)
+    .group_by(Account.id, Account.currency, Account.balance, Account.initial_balance)
+)
+
+# 2. Mathematical drift check
+for row in account_rows:
+    acc_id, currency, actual_bal, initial_bal, total_credits, total_debits = row
+    expected_bal = initial_bal + total_credits - total_debits
+    drift = actual_bal - expected_bal
+    if drift != 0:
+        discrepancies.append(DiscrepancyDetail(drift=f"{drift:+.2f}", ...))
+```
+
+**Why this design is so scalable:**
+- Instead of issuing separate database queries for every account in a loop ($O(N)$ network round-trips), we execute a single SQL `GROUP BY` query with conditional aggregation. PostgreSQL computes sums over indexed foreign keys in milliseconds.
+
+---
+
+### 3. The One Catastrophic Bug This Prevents
+**The Silent Ledger Drift & Untraceable Money Disappearance.**
+- **The Bug:** If an attacker or rogue script modifies an account's balance directly from $100.00 to $10,000.00, normal API endpoints reading `accounts.balance` would honor the fraudulent balance without anyone noticing.
+- **How Phase 4 Prevents It:** In our automated test drill (`test_reconciliation_detects_deliberate_balance_corruption`), we intentionally tampered with an account balance in raw SQL. The reconciliation engine immediately caught the +$9,799.00 drift, flagged status as `DRIFT_DETECTED`, and recorded the exact discrepancy in `reconciliation_runs`.
+
+---
+
+### 4. Three Likely Interview Questions & Short Answers
+
+#### Q1: "Why enforce append-only immutability with a PostgreSQL trigger instead of application-level permissions?"
+**Model Answer:**
+> "Application-level permission checks only protect the HTTP API layer. They do not protect against direct database queries run by database administrators, third-party analytics pipelines, background worker scripts, or migration bugs.
+>
+> A PostgreSQL `BEFORE UPDATE OR DELETE` trigger executes directly inside the database engine. It acts as an unbreakable physical law: no matter where the SQL command originates, PostgreSQL aborts the transaction with an error."
+
+---
+
+#### Q2: "How do you correct an incorrect transaction if ledger entries can never be modified or deleted?"
+**Model Answer:**
+> "By issuing a **reversal transaction**.
+>
+> In GAAP-compliant banking systems, you never edit past history. If an accidental transfer of $100 from Alice to Bob occurred, you create a new transaction with a memo like 'Reversal of Txn #123', debiting Bob $100 and crediting Alice $100. Both the original mistake and the correction are preserved permanently in the audit trail."
+
+---
+
+#### Q3: "What is the computational complexity of reconciliation, and how does it scale in production?"
+**Model Answer:**
+> "In a naive approach, iterating through millions of accounts and querying entries for each takes $O(N)$ queries and minutes of execution.
+>
+> We use a single batch SQL aggregation query with `LEFT JOIN` and `GROUP BY`, which scales to hundreds of thousands of accounts in tens of milliseconds. In massive production systems, reconciliation is typically scheduled asynchronously (e.g. nightly or hourly batches) or run in a continuous streaming window using database change-data-capture (CDC)."
+
+

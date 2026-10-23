@@ -29,9 +29,11 @@ async def create_account(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Account:
     """Create a new account with a specified currency and optional initial balance."""
+    initial = Decimal(payload.initial_balance)
     new_account = Account(
         currency=payload.currency,
-        balance=Decimal(payload.initial_balance),
+        balance=initial,
+        initial_balance=initial,
         version=0,
     )
     db.add(new_account)

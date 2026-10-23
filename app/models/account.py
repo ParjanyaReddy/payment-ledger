@@ -34,6 +34,11 @@ class Account(Base):
         nullable=False,
         default=Decimal("0.00"),
     )
+    initial_balance: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
     version: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -46,6 +51,11 @@ class Account(Base):
     )
 
     __table_args__ = (CheckConstraint("balance >= 0", name="check_account_balance_non_negative"),)
+
+    def __init__(self, **kwargs: object) -> None:
+        if "balance" in kwargs and "initial_balance" not in kwargs:
+            kwargs["initial_balance"] = kwargs["balance"]
+        super().__init__(**kwargs)
 
     def __repr__(self) -> str:
         return f"<Account id={self.id} currency={self.currency} balance={self.balance}>"

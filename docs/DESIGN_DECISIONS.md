@@ -93,3 +93,28 @@ This document records the architectural choices, alternatives considered, and tr
   2. *Application-Level `SELECT then INSERT`:* Vulnerable to race windows where two simultaneous requests both observe an empty key row before either inserts.
 - **Tradeoffs:** Adds an idempotency table lookup and insert per financial request, but guarantees provably zero duplicate charges and zero split-brain inconsistencies under concurrent retries.
 
+---
+
+### ADR 009: Database Trigger for Append-Only Ledger Immutability
+
+- **Status:** Accepted
+- **Context:** In financial accounting, ledger entries must be strictly append-only. No application code, background job, or database administrator should ever be able to execute an `UPDATE` or `DELETE` on historical ledger records.
+- **Decision:** Implement a PostgreSQL BEFORE trigger (`BEFORE UPDATE OR DELETE ON ledger_entries`) that executes a stored PL/pgSQL function raising an exception (`RAISE EXCEPTION 'ledger_entries is append-only...'`).
+- **Alternatives Considered:**
+  1. *Application-level permission checks:* Insufficient because direct SQL access, ORM bugs, or migration scripts could bypass application code.
+  2. *PostgreSQL user permission REVOKE:* Effective, but requires multi-user database credential management that is difficult to maintain across local, testing, and container environments.
+- **Tradeoffs:** Correcting an errant entry requires creating an offsetting reversal entry (debit/credit pair), exactly matching real-world GAAP banking principles.
+
+---
+
+### ADR 010: Two-Invariant Automated Reconciliation & Drift Detection Engine
+
+- **Status:** Accepted
+- **Context:** Cached balance projections (`accounts.balance`) provide fast $O(1)$ reads but can drift if bugs occur or data is manipulated directly.
+- **Decision:** Implement an automated reconciliation engine that verifies two mathematical invariants:
+  1. Account Invariant: `balance == initial_balance + sum(credits) - sum(debits)`.
+  2. Transaction Invariant: `sum(credits) == sum(debits)`.
+  Persist audit records in `reconciliation_runs` and expose audit endpoints for real-time monitoring.
+- **Tradeoffs:** Full aggregation scans all accounts and entries; mitigated by efficient SQL grouping queries and periodic asynchronous execution.
+
+

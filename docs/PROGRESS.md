@@ -32,12 +32,25 @@ This document tracks phase completion, verified requirements, toolchain versions
 - [x] **Phase 1: Data Model, Migrations & Account Management** (Completed)
 - [x] **Phase 2: Transfer Core (Double-Entry & Pessimistic Locking)** (Completed)
 - [x] **Phase 3: Race-Safe Idempotency** (Completed)
-- [ ] **Phase 4: Ledger Immutability & Automated Reconciliation** (Pending)
+- [x] **Phase 4: Ledger Immutability & Automated Reconciliation** (Completed)
 - [ ] **Phase 5: Transactional Outbox & AI Categorization** (Pending)
 - [ ] **Phase 6: Payment Realism (Lifecycle & Velocity Limits)** (Pending)
 - [ ] **Phase 7: Real-Time Web Auditor Frontend** (Pending)
 - [ ] **Phase 8: Benchmarks & Empirical Validation** (Pending)
 - [ ] **Phase 9: Hardening, Observability & Final Packaging** (Pending)
+
+---
+
+## Phase 4 Traceability Matrix
+
+| Requirement | Code File | Function / Component | Test Name | Status |
+|---|---|---|---|---|
+| Append-only trigger (rejects UPDATE) | `migrations/versions/f0553f9746bb_*.py` | `prevent_ledger_entry_mutation()` | `test_ledger_entry_update_prevented_by_trigger` | VERIFIED |
+| Append-only trigger (rejects DELETE) | `migrations/versions/f0553f9746bb_*.py` | `prevent_ledger_entry_mutation()` | `test_ledger_entry_delete_prevented_by_trigger` | VERIFIED |
+| Balance Invariant Verification | `app/services/reconciliation.py` | `run_reconciliation()` | `test_reconciliation_healthy_system` | VERIFIED |
+| Double-entry Txn Invariant | `app/services/reconciliation.py` | `run_reconciliation()` | `test_reconciliation_healthy_system` (asserts credits == debits) | VERIFIED |
+| Deliberate Tampering Drill | `app/services/reconciliation.py` | `run_reconciliation()` | `test_reconciliation_detects_deliberate_balance_corruption` (flags drift) | VERIFIED |
+| Reconciliation API Endpoints | `app/api/routes_reconciliation.py` | `POST /run`, `GET /status` | `test_reconciliation_status_endpoint` | VERIFIED |
 
 ---
 

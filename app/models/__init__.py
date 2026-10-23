@@ -7,6 +7,7 @@ from app.models.account import Account
 from app.models.idempotency_key import IdempotencyKey
 from app.models.ledger_entry import LedgerEntry
 from app.models.outbox import Outbox
+from app.models.reconciliation_run import ReconciliationRun
 from app.models.transaction import Transaction
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "LedgerEntry",
     "IdempotencyKey",
     "Outbox",
+    "ReconciliationRun",
 ]
