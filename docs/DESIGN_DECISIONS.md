@@ -131,12 +131,29 @@ This document records the architectural choices, alternatives considered, and tr
 
 ---
 
-### ADR 012: Asynchronous AI Categorization with Graceful Fallback and Exponential Backoff
+### ADR 013: Two-Phase Card Lifecycle & Balance Hold Isolation
 
 - **Status:** Accepted
-- **Context:** Large Language Models can encounter rate limits (HTTP 429), timeouts, or occasional schema hallucination.
-- **Decision:** Wrap the Google GenAI SDK behind an abstract `TransactionCategorizer` protocol with exponential backoff retry (up to 3 attempts), Pydantic output validation, and graceful fallback to a deterministic rule-based categorizer and "Uncategorized".
-- **Tradeoffs:** Temporary LLM outages result in transactions being marked as "Uncategorized" or rule-classified rather than failing payment operations.
+- **Context:** In real-world card payments (Visa, Mastercard, Stripe), money movement occurs in two distinct phases: Authorization (reserving funds) and Capture/Settlement (transferring funds). An authorization must decrease spendable balance without booking ledger entries or altering financial equity.
+- **Decision:** Introduce a dedicated `holds` column and check constraint (`balance >= holds >= 0`) on `accounts`. 
+  - `available_balance` is defined dynamically as `balance - holds`.
+  - Authorizations create a `card_authorizations` hold row and increment `holds`, immediately protecting funds from concurrent overdrafts or direct transfers.
+  - Voids cancel the authorization and restore available balance with zero ledger mutation.
+  - Captures release the hold and execute an atomic double-entry transfer (debit customer, credit merchant) accompanied by an outbox event.
+  - Refunds execute a reverse double-entry transfer on captured transactions.
+- **Tradeoffs:** Requires dual-balance awareness across API consumers (`balance` vs `available_balance`), matching real-world retail banking APIs.
+
+---
+
+### ADR 014: Rolling-Window Velocity Anti-Fraud Controls
+
+- **Status:** Accepted
+- **Context:** Payment APIs are prime targets for automated credential stuffing, card testing, and rapid balance drainage attacks.
+- **Decision:** Implement a deterministic velocity engine that evaluates activity frequency and cumulative volume over rolling time windows prior to authorization.
+  - Frequency Rule: Rejects requests if activity count in the last 60 seconds reaches or exceeds the threshold (default: 5).
+  - Volume Rule: Rejects requests if rolling 24-hour completed volume exceeds the daily limit (default: $10,000.00).
+- **Tradeoffs:** Adds an aggregation query over indexed account history before lock acquisition; mitigated by index coverage on `(from_account_id, created_at)` and strict rolling time bounds.
+
 
 
 

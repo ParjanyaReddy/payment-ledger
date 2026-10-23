@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     outbox_poll_interval_seconds: float = Field(default=2.0, alias="OUTBOX_POLL_INTERVAL_SECONDS")
     outbox_batch_size: int = Field(default=10, alias="OUTBOX_BATCH_SIZE")
 
+    # Velocity fraud controls
+    velocity_max_tx_per_window: int = Field(default=5, alias="VELOCITY_MAX_TX_PER_WINDOW")
+    velocity_window_seconds: int = Field(default=60, alias="VELOCITY_WINDOW_SECONDS")
+    velocity_max_daily_volume: str = Field(default="10000.00", alias="VELOCITY_MAX_DAILY_VOLUME")
+    velocity_daily_window_seconds: int = Field(default=86400, alias="VELOCITY_DAILY_WINDOW_SECONDS")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

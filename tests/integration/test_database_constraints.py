@@ -17,13 +17,44 @@ from app.models.transaction import Transaction
 
 @pytest.mark.asyncio
 async def test_db_constraint_account_negative_balance(db_session: AsyncSession) -> None:
-    """Verify PostgreSQL rejects negative balance (CHECK balance >= 0)."""
+    """Verify PostgreSQL rejects negative balance (CHECK balance >= 0 or balance >= holds)."""
     bad_account = Account(
         currency="USD",
         balance=Decimal("-10.00"),  # Violates check_account_balance_non_negative
     )
     db_session.add(bad_account)
-    with pytest.raises(IntegrityError, match="check_account_balance_non_negative"):
+    with pytest.raises(
+        IntegrityError,
+        match="(check_account_balance_non_negative|check_account_balance_covers_holds)",
+    ):
+        await db_session.commit()
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_db_constraint_account_holds_exceed_balance(db_session: AsyncSession) -> None:
+    """Verify PostgreSQL rejects holds exceeding balance (CHECK balance >= holds)."""
+    bad_account = Account(
+        currency="USD",
+        balance=Decimal("50.00"),
+        holds=Decimal("100.00"),  # Violates check_account_balance_covers_holds
+    )
+    db_session.add(bad_account)
+    with pytest.raises(IntegrityError, match="check_account_balance_covers_holds"):
+        await db_session.commit()
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_db_constraint_account_holds_negative(db_session: AsyncSession) -> None:
+    """Verify PostgreSQL rejects negative holds (CHECK holds >= 0)."""
+    bad_account = Account(
+        currency="USD",
+        balance=Decimal("100.00"),
+        holds=Decimal("-10.00"),  # Violates check_account_holds_non_negative
+    )
+    db_session.add(bad_account)
+    with pytest.raises(IntegrityError, match="check_account_holds_non_negative"):
         await db_session.commit()
     await db_session.rollback()
 

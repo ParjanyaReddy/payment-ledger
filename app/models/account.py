@@ -39,6 +39,12 @@ class Account(Base):
         nullable=False,
         default=Decimal("0.00"),
     )
+    holds: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        server_default="0.00",
+    )
     version: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -50,12 +56,23 @@ class Account(Base):
         nullable=False,
     )
 
-    __table_args__ = (CheckConstraint("balance >= 0", name="check_account_balance_non_negative"),)
+    __table_args__ = (
+        CheckConstraint("balance >= 0", name="check_account_balance_non_negative"),
+        CheckConstraint("holds >= 0", name="check_account_holds_non_negative"),
+        CheckConstraint("balance >= holds", name="check_account_balance_covers_holds"),
+    )
 
     def __init__(self, **kwargs: object) -> None:
         if "balance" in kwargs and "initial_balance" not in kwargs:
             kwargs["initial_balance"] = kwargs["balance"]
+        if "holds" not in kwargs:
+            kwargs["holds"] = Decimal("0.00")
         super().__init__(**kwargs)
 
+    @property
+    def available_balance(self) -> Decimal:
+        """Calculate spendable balance after deducting active authorizations/holds."""
+        return self.balance - self.holds
+
     def __repr__(self) -> str:
-        return f"<Account id={self.id} currency={self.currency} balance={self.balance}>"
+        return f"<Account id={self.id} currency={self.currency} balance={self.balance} holds={self.holds}>"

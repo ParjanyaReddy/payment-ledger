@@ -19,7 +19,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 
@@ -48,7 +49,8 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.database_url
+    target_url = config.get_main_option("sqlalchemy.url") or settings.database_url
+    configuration["sqlalchemy.url"] = target_url
 
     connectable = async_engine_from_config(
         configuration,

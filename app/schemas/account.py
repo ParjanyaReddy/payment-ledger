@@ -67,15 +67,17 @@ class AccountResponse(BaseModel):
     id: uuid.UUID
     currency: str
     balance: str
+    holds: str = "0.00"
+    available_balance: str = "0.00"
     version: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_validator("balance", mode="before")
+    @field_validator("balance", "holds", "available_balance", mode="before")
     @classmethod
-    def format_balance(cls, v: object) -> str:
-        """Format Decimal balance to exact 2-decimal string representation."""
+    def format_decimal_fields(cls, v: object) -> str:
+        """Format Decimal values to exact 2-decimal string representation."""
         if isinstance(v, Decimal):
             return f"{v:.2f}"
         if isinstance(v, (int, float, str)):

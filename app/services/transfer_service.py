@@ -52,6 +52,7 @@ async def execute_transfer(
     amount: Decimal,
     currency: str,
     memo: str | None = None,
+    check_velocity: bool = False,
 ) -> TransferResult:
     """Execute an atomic double-entry transfer between two accounts.
 
@@ -88,17 +89,23 @@ async def execute_transfer(
     if amount <= Decimal("0.00"):
         raise InvalidAmountError(str(amount))
 
-    # 3. Sort account IDs to enforce a global, deterministic lock acquisition order
+    # 3. Optional velocity fraud check
+    if check_velocity:
+        from app.services.velocity import check_velocity_limits
+
+        await check_velocity_limits(db, from_account_id, amount, include_authorizations=False)
+
+    # 4. Sort account IDs to enforce a global, deterministic lock acquisition order
     sorted_ids = sorted([from_account_id, to_account_id])
 
-    # 4. Acquire pessimistic row-level exclusive locks in sorted order
+    # 5. Acquire pessimistic row-level exclusive locks in sorted order
     # SELECT ... FOR UPDATE blocks any concurrent transaction from modifying
     # these accounts until this transaction commits or rolls back.
     stmt = select(Account).where(Account.id.in_(sorted_ids)).order_by(Account.id).with_for_update()
     result = await db.execute(stmt)
     locked_accounts = {account.id: account for account in result.scalars().all()}
 
-    # 5. Verify both accounts exist in the database
+    # 6. Verify both accounts exist in the database
     if from_account_id not in locked_accounts:
         raise AccountNotFoundError(from_account_id)
     if to_account_id not in locked_accounts:
@@ -107,24 +114,24 @@ async def execute_transfer(
     sender = locked_accounts[from_account_id]
     receiver = locked_accounts[to_account_id]
 
-    # 6. Verify currency consistency
+    # 7. Verify currency consistency
     currency_clean = currency.strip().upper()
     if sender.currency != currency_clean:
         raise CurrencyMismatchError(expected=currency_clean, actual=sender.currency)
     if receiver.currency != currency_clean:
         raise CurrencyMismatchError(expected=currency_clean, actual=receiver.currency)
 
-    # 7. Check sufficient funds on the freshly locked row
-    # Because we hold the FOR UPDATE lock, no other transaction can concurrently
-    # reduce this balance between our check and our debit.
-    if sender.balance < amount:
+    # 8. Check sufficient available funds on the freshly locked row
+    # Deducts active card holds to prevent spending held funds.
+    sender_available = sender.balance - sender.holds
+    if sender_available < amount:
         raise InsufficientFundsError(
             account_id=from_account_id,
-            available=f"{sender.balance:.2f}",
+            available=f"{sender_available:.2f}",
             requested=f"{amount:.2f}",
         )
 
-    # 8. Create the parent Transaction record
+    # 9. Create the parent Transaction record
     transfer_txn = Transaction(
         id=uuid.uuid4(),
         from_account_id=from_account_id,

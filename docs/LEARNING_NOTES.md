@@ -484,5 +484,95 @@ await db.commit()
 > 2. **Rule-Based Fallback:** If the LLM service is completely unavailable or credentials are missing, we fall back to a high-speed deterministic keyword matching engine.
 > 3. **Non-Blocking Execution:** Synchronous SDK calls run in an asynchronous worker thread pool (`asyncio.to_thread`), preventing CPU or event loop starvation, with final fallback to `'Uncategorized'`."
 
+---
+
+## Phase 6: Payment Realism (Card Lifecycle & Velocity Fraud Rules)
+
+### 1. Plain-English Overview
+When you swipe your card at a hotel or gas station, money doesn't instantly transfer to the merchant's bank account. Instead, the transaction follows a two-phase protocol:
+1. **Authorization (The Hold):** 
+   - The hotel checks if you have $200.00. 
+   - They place a temporary **hold** on your account. 
+   - Your *Booked Balance* (what you officially own) is still $1,000.00. 
+   - Your *Available Balance* (what you can spend right now) drops to $800.00. 
+   - **No ledger entry is written yet**, because no money has changed hands.
+2. **Settlement Capture (The Final Charge):**
+   - When you check out, the hotel settles the bill. 
+   - The hold is released, and an immutable double-entry transfer is executed: customer is debited $200.00, hotel is credited $200.00. 
+   - Two immutable `ledger_entries` are written to the database.
+3. **Void (Cancellation):**
+   - If you cancel your reservation before check-in, the authorization is **voided**. The hold disappears, your available balance returns to $1,000.00, and zero ledger rows were ever created.
+4. **Refund (Post-Settlement Reversal):**
+   - If after settling you return an item, a reverse double-entry transfer debits the merchant and credits the customer.
+
+To protect against card fraud, we add a **Velocity Engine**:
+- Rejects automated bots trying to run 50 rapid-fire card tests in 10 seconds.
+- Rejects sudden anomalous spikes that exceed daily spending limits.
+
+---
+
+### 2. Walkthrough of the Core File: `app/services/card_service.py`
+In `app/services/card_service.py` (`CORE LOGIC: understand this file line by line`):
+
+```python
+# 1. Authorize: Place hold on available balance
+available_balance = customer.balance - customer.holds
+if available_balance < amount:
+    raise InsufficientFundsError(...)
+
+customer.holds += amount
+authorization = CardAuthorization(
+    account_id=customer.id,
+    merchant_id=merchant.id,
+    amount=amount,
+    status="AUTHORIZED",
+    expires_at=now + timedelta(hours=hold_duration_hours),
+)
+
+# 2. Capture: Release hold and execute double-entry transfer
+customer.holds -= auth.amount
+customer.balance -= final_amount
+merchant.balance += final_amount
+
+# Write immutable ledger rows
+db.add(LedgerEntry(account_id=customer.id, direction="DEBIT", amount=final_amount))
+db.add(LedgerEntry(account_id=merchant.id, direction="CREDIT", amount=final_amount))
+auth.status = "CAPTURED"
+```
+
+---
+
+### 3. The One Catastrophic Bug This Prevents
+**The "Ghost Balance" Double-Spend Attack.**
+- **The Bug:** If an authorization does not explicitly decrement the spendable balance, a customer with $100 could authorize $90 for a hotel room, and then immediately wire $90 to a friend before the hotel captures. When the hotel attempts to settle, the account has only $10 left, causing an overdraft or default.
+- **How Phase 6 Prevents It:** `Account.holds` is enforced at the PostgreSQL database level (`CHECK balance >= holds`). Wire transfers explicitly check `if (sender.balance - sender.holds) < amount`. The customer cannot spend funds that are held by pending authorizations.
+
+---
+
+### 4. Three Likely Interview Questions & Short Answers
+
+#### Q1: "What is the difference between booked balance and available balance?"
+**Model Answer:**
+> "**Booked balance** (or ledger balance) represents funds that have officially settled through immutable double-entry ledger entries.
+>
+> **Available balance** represents the spendable funds right now: `Available = Booked Balance - Active Holds`. An authorization places a hold against the available balance without creating ledger entries until settlement capture."
+
+---
+
+#### Q2: "Why don't card authorizations write entries into the `ledger_entries` table?"
+**Model Answer:**
+> "Because authorizations represent intent, not settlement. If a gas station pre-authorizes $100 and you only pump $35 of gas, or if a transaction is voided, creating and deleting ledger entries would violate accounting immutability and corrupt financial audits.
+>
+> Holds belong in the state-machine and accounts projection layer. Ledger entries are only created upon capture or refund when real monetary settlement occurs."
+
+---
+
+#### Q3: "How does your system prevent deadlocks during capture and refund settlement?"
+**Model Answer:**
+> "Both capture and refund involve two accounts (customer and merchant). Just like standard transfers, we enforce deterministic lock acquisition: account IDs are sorted in ascending UUID order before acquiring `SELECT ... FOR UPDATE` row locks.
+>
+> Regardless of whether a customer is paying a merchant (capture) or a merchant is reimbursing a customer (refund), both operations acquire locks in the exact same global order, making circular wait deadlocks mathematically impossible."
+
+
 
 

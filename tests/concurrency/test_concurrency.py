@@ -9,6 +9,7 @@ Proves:
 import asyncio
 import random
 import uuid
+from collections.abc import AsyncGenerator
 from decimal import Decimal
 
 import pytest
@@ -22,7 +23,7 @@ from app.models.account import Account
 from tests.conftest import TestingSessionLocal
 
 
-async def override_get_test_db():
+async def override_get_test_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency override yielding an independent session per request."""
     async with TestingSessionLocal() as session:
         try:

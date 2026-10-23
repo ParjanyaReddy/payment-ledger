@@ -56,3 +56,50 @@ class InvalidAmountError(LedgerError):
     def __init__(self, amount: str) -> None:
         self.amount = amount
         super().__init__(f"Transfer amount must be strictly positive: '{amount}'")
+
+
+class CardAuthorizationNotFoundError(LedgerError):
+    """Raised when a card authorization cannot be located by ID."""
+
+    def __init__(self, authorization_id: uuid.UUID) -> None:
+        self.authorization_id = authorization_id
+        super().__init__(f"Card authorization '{authorization_id}' was not found")
+
+
+class InvalidCardStateTransitionError(LedgerError):
+    """Raised when attempting an illegal state transition in the card lifecycle."""
+
+    def __init__(self, current_status: str, attempted_action: str) -> None:
+        self.current_status = current_status
+        self.attempted_action = attempted_action
+        super().__init__(
+            f"Cannot execute '{attempted_action}' on authorization in '{current_status}' status"
+        )
+
+
+class CardAuthorizationExpiredError(LedgerError):
+    """Raised when attempting to capture or manipulate an expired authorization."""
+
+    def __init__(self, authorization_id: uuid.UUID) -> None:
+        self.authorization_id = authorization_id
+        super().__init__(f"Card authorization '{authorization_id}' has expired")
+
+
+class VelocityLimitExceededError(LedgerError):
+    """Raised when an account exceeds frequency or volume velocity fraud rules."""
+
+    def __init__(self, account_id: uuid.UUID, reason: str) -> None:
+        self.account_id = account_id
+        self.reason = reason
+        super().__init__(f"Velocity limit exceeded for account '{account_id}': {reason}")
+
+
+class InvalidRefundAmountError(LedgerError):
+    """Raised when a refund amount exceeds the eligible captured amount."""
+
+    def __init__(self, requested: str, max_allowed: str) -> None:
+        self.requested = requested
+        self.max_allowed = max_allowed
+        super().__init__(
+            f"Refund amount '{requested}' exceeds maximum eligible refund '{max_allowed}'"
+        )

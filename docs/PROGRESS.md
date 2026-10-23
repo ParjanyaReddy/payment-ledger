@@ -34,10 +34,30 @@ This document tracks phase completion, verified requirements, toolchain versions
 - [x] **Phase 3: Race-Safe Idempotency** (Completed)
 - [x] **Phase 4: Ledger Immutability & Automated Reconciliation** (Completed)
 - [x] **Phase 5: Transactional Outbox & AI Categorization** (Completed)
-- [ ] **Phase 6: Payment Realism (Lifecycle & Velocity Limits)** (Pending)
+- [x] **Phase 6: Payment Realism (Lifecycle & Velocity Limits)** (Completed)
 - [ ] **Phase 7: Real-Time Web Auditor Frontend** (Pending)
 - [ ] **Phase 8: Benchmarks & Empirical Validation** (Pending)
 - [ ] **Phase 9: Hardening, Observability & Final Packaging** (Pending)
+
+---
+
+## Phase 6 Traceability Matrix
+
+| Requirement | Code File | Function / Component | Test Name | Status |
+|---|---|---|---|---|
+| Card Authorization Hold | `app/services/card_service.py` | `authorize_card_payment()` | `test_card_full_lifecycle_auth_capture_refund` | VERIFIED |
+| Card Settlement Capture | `app/services/card_service.py` | `capture_card_payment()` | `test_card_full_lifecycle_auth_capture_refund` | VERIFIED |
+| Card Pre-Settlement Void | `app/services/card_service.py` | `void_card_payment()` | `test_card_authorization_and_void` | VERIFIED |
+| Card Reverse Double-Entry Refund | `app/services/card_service.py` | `refund_card_payment()` | `test_card_full_lifecycle_auth_capture_refund` | VERIFIED |
+| Partial Capture Settlement | `app/services/card_service.py` | `capture_card_payment()` | `test_card_partial_capture` | VERIFIED |
+| Available Balance Overdraft Isolation | `app/services/transfer_service.py` | `execute_transfer()` | `test_holds_prevent_direct_transfer_overdraft` | VERIFIED |
+| Card Auth Idempotency Replay | `app/api/routes_cards.py` | `create_card_authorization()` | `test_card_authorization_idempotency_replay` | VERIFIED |
+| Velocity Frequency Limit | `app/services/velocity.py` | `check_velocity_limits()` | `test_velocity_frequency_limit_triggers` | VERIFIED |
+| Velocity Daily Volume Limit | `app/services/velocity.py` | `check_velocity_limits()` | `test_velocity_daily_volume_limit_triggers` | VERIFIED |
+| Invalid State Transition Rejection | `app/services/card_service.py` | `InvalidCardStateTransitionError` | `test_invalid_state_transitions_rejected` | VERIFIED |
+| Account Holds Check Constraints | `migrations/versions/c56b02a78129_*.py` | `check_account_balance_covers_holds` | `test_db_constraint_account_holds_exceed_balance` | VERIFIED |
+| Card API Route Endpoints | `app/api/routes_cards.py` | `/authorize`, `/{id}/capture`, `/{id}/void`, `/{id}/refund`, `/{id}`, `/account/{acc_id}` | `tests/integration/test_cards.py` (8 tests) | VERIFIED |
+
 
 ---
 
