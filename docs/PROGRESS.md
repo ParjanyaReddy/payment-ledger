@@ -36,12 +36,25 @@ This document tracks phase completion, verified requirements, toolchain versions
 - [x] **Phase 5: Transactional Outbox & AI Categorization** (Completed)
 - [x] **Phase 6: Payment Realism (Lifecycle & Velocity Limits)** (Completed)
 - [x] **Phase 7: Real-Time Web Auditor Frontend** (Completed)
-- [ ] **Phase 8: Benchmarks & Empirical Validation** (Pending)
+- [x] **Phase 8: Benchmarks & Empirical Validation** (Completed)
 - [ ] **Phase 9: Hardening, Observability & Final Packaging** (Pending)
 
 ---
 
+## Phase 8 Traceability Matrix
+
+| Requirement | Code File | Function / Component | Test / Benchmark Output | Status |
+|---|---|---|---|---|
+| Ordered vs Unordered Locks Benchmark | `benchmarks/concurrency_benchmarks.py` | `benchmark_ordered_vs_unordered_locks()` | 100 opposing transfers: 0.0% deadlocks vs 95.0% deadlocks baseline | VERIFIED |
+| Transactional Outbox vs Inline AI | `benchmarks/concurrency_benchmarks.py` | `benchmark_inline_vs_outbox()` | p50 9.93ms (Outbox) vs 368.21ms (Inline), 36.6x latency reduction | VERIFIED |
+| High-Concurrency Overdraft Race | `benchmarks/concurrency_benchmarks.py` | `benchmark_concurrency_overdraft_protection()` | 200 workers vs $50: 50 approved, 150 rejected, $0.00 final balance | VERIFIED |
+| k6 Multi-VU HTTP API Load Test | `benchmarks/k6/transfers_load.js` | k6 v2.2.0 Load Test | 487 requests, 0.00% failure rate, post-test audit status HEALTHY | VERIFIED |
+| Empirical Results & Resume Bullets | `docs/RESULTS.md` | Benchmark Documentation | 3 runs per test, medians, ranges, system specs, limitations | VERIFIED |
+
+---
+
 ## Phase 7 Traceability Matrix
+
 
 | Requirement | Code File | Function / Component | Test / Verification | Status |
 |---|---|---|---|---|
