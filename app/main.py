@@ -7,7 +7,7 @@ and handles application lifecycle events.
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +19,7 @@ from app.api.routes_reconciliation import router as reconciliation_router
 from app.api.routes_transfers import router as transfers_router
 from app.config import get_settings
 from app.db import engine
+from app.telemetry import TelemetryMiddleware, metrics_endpoint, setup_logging
 
 settings = get_settings()
 
@@ -26,7 +27,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifecycle manager for startup and graceful shutdown."""
-    # Startup: ensure settings are loaded
+    # Startup: configure structured JSON logging and ensure settings are loaded
+    setup_logging()
     _ = settings
     yield
     # Shutdown: gracefully close database connection pool
@@ -54,6 +56,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Enable Telemetry & Request ID tracing middleware
+app.add_middleware(TelemetryMiddleware)
+
 # Mount frontend static directory
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -63,6 +68,12 @@ app.include_router(accounts_router, prefix="/api/v1")
 app.include_router(transfers_router, prefix="/api/v1")
 app.include_router(cards_router, prefix="/api/v1")
 app.include_router(reconciliation_router, prefix="/api/v1")
+
+
+@app.get("/metrics", tags=["Observability"])
+async def get_metrics() -> Response:
+    """Expose Prometheus telemetry scrape endpoint."""
+    return await metrics_endpoint()
 
 
 @app.get("/dashboard", include_in_schema=False)
@@ -78,6 +89,7 @@ async def root() -> dict[str, str]:
         "service": "Payment Ledger & Real-Time Auditor API",
         "docs": "/docs",
         "dashboard": "/dashboard",
+        "metrics": "/metrics",
         "health": "/api/v1/health",
         "ready": "/api/v1/ready",
     }
