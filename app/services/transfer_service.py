@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.ledger_entry import LedgerEntry
+from app.models.outbox import Outbox
 from app.models.transaction import Transaction
 from app.services.exceptions import (
     AccountNotFoundError,
@@ -160,6 +161,15 @@ async def execute_transfer(
     )
     db.add(debit_entry)
     db.add(credit_entry)
+
+    # 11. Enqueue durable Outbox record for asynchronous AI categorization
+    outbox_entry = Outbox(
+        id=uuid.uuid4(),
+        transaction_id=transfer_txn.id,
+        status="PENDING",
+        attempts=0,
+    )
+    db.add(outbox_entry)
 
     # Flush session to populate database-generated fields while retaining the transaction
     await db.flush()

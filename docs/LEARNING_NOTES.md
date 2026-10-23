@@ -403,4 +403,86 @@ for row in account_rows:
 >
 > We use a single batch SQL aggregation query with `LEFT JOIN` and `GROUP BY`, which scales to hundreds of thousands of accounts in tens of milliseconds. In massive production systems, reconciliation is typically scheduled asynchronously (e.g. nightly or hourly batches) or run in a continuous streaming window using database change-data-capture (CDC)."
 
+---
+
+## Phase 5: Transactional Outbox Pattern & AI Categorization
+
+### 1. Plain-English Overview
+Imagine you are at a supermarket checkout line. The cashier scans your items, takes your card, and confirms payment.
+Now imagine if before handing you your receipt, the cashier forced you to wait 30 seconds while an art critic analyzed the typography on your cereal box. That would cause massive lines and outraged customers!
+In payment software, calling a large language model (like Google Gemini) directly in the middle of a money transfer is just as disastrous:
+- LLM calls take 500ms to 2000ms.
+- If the AI service has a network timeout, does the transfer fail even though the money was available?
+- If the server crashes after moving the money but before calling the AI, the categorization event is lost forever (the **Dual-Write Problem**).
+
+Phase 5 solves this using the **Transactional Outbox Pattern**:
+1. When you transfer money, we drop a tiny note in an `outbox` database table **in the exact same ACID transaction**.
+2. The transfer commits instantly (sub-20ms) and returns 201 to the user.
+3. In the background, a dedicated worker picks up the outbox note using `SELECT ... FOR UPDATE SKIP LOCKED`, calls Gemini asynchronously, updates the transaction's category (`Food & Dining`, `Transportation`, etc.), and marks the task `DONE`.
+
+---
+
+### 2. Walkthrough of the Core File: `app/workers/outbox_worker.py`
+In `app/workers/outbox_worker.py` (`CORE LOGIC: understand this file line by line`):
+
+```python
+# 1. Exclusive claim without worker contention
+stmt = (
+    select(Outbox)
+    .where(Outbox.status == "PENDING")
+    .order_by(Outbox.created_at)
+    .limit(batch_size)
+    .with_for_update(skip_locked=True)
+)
+outbox_entries = (await db.execute(stmt)).scalars().all()
+
+# 2. Asynchronous categorization outside the payment transaction
+for entry in outbox_entries:
+    txn = await db.get(Transaction, entry.transaction_id)
+    category = await categorizer.categorize(txn.memo)
+    txn.ai_category = category
+    entry.status = "DONE"
+await db.commit()
+```
+
+**Why `SKIP LOCKED` is a distributed systems superpower:**
+- If you run 10 background worker containers in Kubernetes, multiple workers polling `WHERE status = 'PENDING'` without `SKIP LOCKED` would all attempt to lock the exact same rows, causing deadlock or blocked threads.
+- `SKIP LOCKED` tells PostgreSQL: *"If another worker is currently processing this row, skip past it and give me the next available unlocked rows immediately."*
+- Every worker processes a disjoint chunk of work with zero lock contention!
+
+---
+
+### 3. The One Catastrophic Bug This Prevents
+**The Dual-Write Data Loss & Slow Payment Bottleneck.**
+- **The Bug:** Doing `await execute_transfer(...)` and then `await call_external_kafka_or_llm(...)`. If the server crashes or restarts between those two lines, the transfer committed, but the downstream event was never published and is permanently lost.
+- **How Phase 5 Prevents It:** Because the `outbox` row is saved in the *same* PostgreSQL transaction as the ledger entries, either both are saved or neither is. The background worker guarantees at-least-once processing.
+
+---
+
+### 4. Three Likely Interview Questions & Short Answers
+
+#### Q1: "What is the Dual-Write Problem in microservices, and how does the Transactional Outbox Pattern solve it?"
+**Model Answer:**
+> "The dual-write problem occurs when an application needs to update a database and publish an event to an external system (like Kafka or an LLM API) in the same business flow. Because standard distributed systems lack a unified two-phase commit, one operation can succeed while the other fails.
+>
+> The Transactional Outbox pattern eliminates this: instead of calling the external system directly, you write an outbox record into the database within the *same* local database transaction. Because relational databases guarantee ACID atomicity, the event record is guaranteed to be saved if and only if the business data commits. An asynchronous worker then reliably reads and forwards the events."
+
+---
+
+#### Q2: "How does `SKIP LOCKED` differ from standard `SELECT ... FOR UPDATE` in a worker pool?"
+**Model Answer:**
+> "`SELECT ... FOR UPDATE` locks the matching rows, forcing any other worker querying the same table to block and wait until the first worker's transaction commits.
+>
+> `SKIP LOCKED` instructs PostgreSQL to skip over any rows currently locked by other transactions and immediately return the next batch of unlocked rows. In a multi-worker pool, this enables non-blocking, lock-free work distribution where multiple workers process batches in parallel without waiting or deadlocking."
+
+---
+
+#### Q3: "What resilience strategies did you implement for external LLM API calls?"
+**Model Answer:**
+> "Three complementary patterns:
+> 1. **Exponential Backoff Retries:** Transient rate limits (429) or timeouts retry up to 3 times with progressive delays.
+> 2. **Rule-Based Fallback:** If the LLM service is completely unavailable or credentials are missing, we fall back to a high-speed deterministic keyword matching engine.
+> 3. **Non-Blocking Execution:** Synchronous SDK calls run in an asynchronous worker thread pool (`asyncio.to_thread`), preventing CPU or event loop starvation, with final fallback to `'Uncategorized'`."
+
+
 

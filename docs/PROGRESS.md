@@ -33,11 +33,25 @@ This document tracks phase completion, verified requirements, toolchain versions
 - [x] **Phase 2: Transfer Core (Double-Entry & Pessimistic Locking)** (Completed)
 - [x] **Phase 3: Race-Safe Idempotency** (Completed)
 - [x] **Phase 4: Ledger Immutability & Automated Reconciliation** (Completed)
-- [ ] **Phase 5: Transactional Outbox & AI Categorization** (Pending)
+- [x] **Phase 5: Transactional Outbox & AI Categorization** (Completed)
 - [ ] **Phase 6: Payment Realism (Lifecycle & Velocity Limits)** (Pending)
 - [ ] **Phase 7: Real-Time Web Auditor Frontend** (Pending)
 - [ ] **Phase 8: Benchmarks & Empirical Validation** (Pending)
 - [ ] **Phase 9: Hardening, Observability & Final Packaging** (Pending)
+
+---
+
+## Phase 5 Traceability Matrix
+
+| Requirement | Code File | Function / Component | Test Name | Status |
+|---|---|---|---|---|
+| Atomic Outbox record creation | `app/services/transfer_service.py` | `execute_transfer()` | `test_transfer_creates_pending_outbox_record` | VERIFIED |
+| Asynchronous outbox processing | `app/workers/outbox_worker.py` | `process_outbox_batch()` | `test_process_outbox_batch_categorizes_transaction` | VERIFIED |
+| Concurrency via SKIP LOCKED | `app/workers/outbox_worker.py` | `process_outbox_batch()` | `test_outbox_concurrent_workers_skip_locked` (0 lock contention) | VERIFIED |
+| Retry & fallback resilience | `app/workers/outbox_worker.py` | `process_outbox_batch()` | `test_outbox_worker_retry_and_failure_fallback` (3 retries -> FAILED) | VERIFIED |
+| Canonical category validation | `app/services/categorizer.py` | `CategorizationResult` | `test_categorizer_basic_categories` | VERIFIED |
+| 100-sample memo accuracy benchmark | `tests/unit/test_categorizer.py` | `test_100_sample_transaction_memos_evaluation` | 100/100 correct (100.0% accuracy >= 95% threshold) | VERIFIED |
+| Deterministic test mocks | `app/services/categorizer.py` | `FakeCategorizer` | `test_fake_categorizer_behavior` | VERIFIED |
 
 ---
 

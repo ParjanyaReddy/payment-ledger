@@ -117,4 +117,26 @@ This document records the architectural choices, alternatives considered, and tr
   Persist audit records in `reconciliation_runs` and expose audit endpoints for real-time monitoring.
 - **Tradeoffs:** Full aggregation scans all accounts and entries; mitigated by efficient SQL grouping queries and periodic asynchronous execution.
 
+---
+
+### ADR 011: Transactional Outbox Pattern with `SELECT ... FOR UPDATE SKIP LOCKED`
+
+- **Status:** Accepted
+- **Context:** Calling external AI services (Google Gemini LLM) synchronously inside the transfer endpoint introduces high network latency (500ms–2000ms), external failure modes, and database connection holding. Conversely, firing an asynchronous HTTP call after commit risks the "dual-write problem" where the transfer commits but the event is lost if the process restarts.
+- **Decision:** Atomically insert an `outbox` task record inside the exact same database transaction as the financial transfer. A background worker polls pending records using `SELECT ... FOR UPDATE SKIP LOCKED`, guaranteeing horizontal scalability across multiple worker instances with zero lock contention.
+- **Alternatives Considered:**
+  1. *Synchronous In-Line LLM Call:* Dramatically degrades transfer throughput, violates p99 SLAs, and causes transfer failures if Google GenAI has a momentary hiccup.
+  2. *Kafka / RabbitMQ Dual-Write:* Dual-writes without two-phase commit cannot guarantee consistency between database commit and message publishing.
+- **Tradeoffs:** Introduces polling interval latency (1–2s) for category enrichment, which is completely acceptable for asynchronous classification metadata.
+
+---
+
+### ADR 012: Asynchronous AI Categorization with Graceful Fallback and Exponential Backoff
+
+- **Status:** Accepted
+- **Context:** Large Language Models can encounter rate limits (HTTP 429), timeouts, or occasional schema hallucination.
+- **Decision:** Wrap the Google GenAI SDK behind an abstract `TransactionCategorizer` protocol with exponential backoff retry (up to 3 attempts), Pydantic output validation, and graceful fallback to a deterministic rule-based categorizer and "Uncategorized".
+- **Tradeoffs:** Temporary LLM outages result in transactions being marked as "Uncategorized" or rule-classified rather than failing payment operations.
+
+
 

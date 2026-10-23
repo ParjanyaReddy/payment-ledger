@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     )
 
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
 
     outbox_poll_interval_seconds: float = Field(default=2.0, alias="OUTBOX_POLL_INTERVAL_SECONDS")
     outbox_batch_size: int = Field(default=10, alias="OUTBOX_BATCH_SIZE")
