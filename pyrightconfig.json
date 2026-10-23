@@ -1,0 +1,13 @@
+{
+  "include": [
+    "app",
+    "tests",
+    "benchmarks"
+  ],
+  "extraPaths": [
+    "."
+  ],
+  "pythonPath": "C:/Users/reddy/AppData/Local/Programs/Python/Python314/python.exe",
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": false
+}

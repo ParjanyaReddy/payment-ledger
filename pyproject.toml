@@ -91,3 +91,11 @@ python_functions = ["test_*"]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+
+[tool.pyrefly]
+search-path = [".", "app"]
+python-interpreter-path = "C:/Users/reddy/AppData/Local/Programs/Python/Python314/python.exe"
+
+[tool.pyrefly.errors]
+missing-import = "ignore"
+untyped-import = "ignore"
