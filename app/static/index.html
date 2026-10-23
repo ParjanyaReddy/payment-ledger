@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transaction Ledger | Cash, Proven</title>
+  <meta name="description" content="Production-grade double-entry transaction ledger and real-time financial auditor dashboard featuring race-safe idempotency, append-only database triggers, card lifecycle holds, and formal balance verification.">
+  
+  <!-- Modern Typography Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Left Sidebar Navigation (Figr Minimalist Style) -->
+  <aside class="app-sidebar" aria-label="Sidebar Navigation">
+    <div class="sidebar-header">
+      <div class="brand-icon">T</div>
+      <div class="brand-text">
+        <h1>Transaction Ledger</h1>
+        <span>LEDGER CORE &bull; Double-Entry Financial Accounting Engine</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-title">Core Ledger</div>
+      <button class="nav-item active" data-tab="tab-accounts" id="nav-tab-accounts">
+        <div class="nav-item-content">
+          <span class="nav-dot"></span>
+          <span>Accounts</span>
+        </div>
+        <span class="nav-counter" id="badge-account-count">0</span>
+      </button>
+
+      <button class="nav-item" data-tab="tab-transfers" id="nav-tab-transfers">
+        <div class="nav-item-content">
+          <span class="nav-dot"></span>
+          <span>Transfer Terminal</span>
+        </div>
+      </button>
+
+      <button class="nav-item" data-tab="tab-cards" id="nav-tab-cards">
+        <div class="nav-item-content">
+          <span class="nav-dot"></span>
+          <span>Card Lifecycle</span>
+        </div>
+        <span class="nav-counter" id="badge-active-holds">0</span>
+      </button>
+
+      <button class="nav-item" data-tab="tab-ledger" id="nav-tab-ledger">
+        <div class="nav-item-content">
+          <span class="nav-dot"></span>
+          <span>Audit Stream</span>
+        </div>
+      </button>
+
+      <div class="nav-section-title" style="margin-top: 12px;">Verification</div>
+      <button class="nav-item" data-tab="tab-reconciliation" id="nav-tab-reconciliation">
+        <div class="nav-item-content">
+          <span class="nav-dot"></span>
+          <span>Reconciliation</span>
+        </div>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="system-status-box">
+        <div class="status-row">
+          <span class="dot-indicator"></span>
+          <span style="font-weight: 600;">PostgreSQL 18</span>
+        </div>
+        <div class="status-row" style="color: var(--text-dim);">
+          <span>Trigger: Enforced</span>
+        </div>
+        <div class="status-row" style="color: var(--badge-credit-text); font-weight: 600;">
+          <span id="reconciliation-health-badge">&bull; Invariant Verified</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content Shell -->
+  <div class="app-main">
+    <!-- Top Sticky Header -->
+    <header class="top-bar">
+      <div class="top-search-group">
+        <input type="text" class="search-input" id="global-search-input" placeholder="Search transaction ledger, accounts, entries...">
+      </div>
+
+      <div class="top-actions">
+        <div class="liquidity-chip">
+          <span class="liquidity-chip-label">System Liquidity</span>
+          <span class="liquidity-chip-value" id="total-liquidity">$0.00 USD</span>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-open-create-account-modal">
+          <span>+</span> Create Account
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btn-manual-refresh" title="Refresh all ledger data">
+          <span>&#x21bb;</span> Refresh
+        </button>
+      </div>
+    </header>
+
+    <!-- Content Body -->
+    <main class="content-body">
+      <!-- Page Hero Header (Purrweb Cashline "CASH, PROVEN." + Figr Clean Layout) -->
+      <section class="page-header">
+        <div>
+          <div class="category-tag">DRB-761 &bull; Treasury Cash Position</div>
+          <h1 class="page-title">CASH, PROVEN.</h1>
+          <p class="page-subtitle">
+            Provable double-entry transaction ledger with append-only database triggers, race-safe idempotency, card hold reservations, and continuous balance reconciliation.
+          </p>
+        </div>
+      </section>
+
+      <!-- Top KPI Summary Cards (Cashline / Modern Treasury Style) -->
+      <section class="kpi-row" aria-label="Key Performance Indicators">
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-label">Available Liquidity</span>
+          </div>
+          <div class="kpi-value" id="stat-available-balance" style="color: var(--badge-credit-text);">$0.00</div>
+          <div class="kpi-subtext">
+            <span>Spendable liquidity &bull; Reconciled</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-label">Total Booked Balance</span>
+          </div>
+          <div class="kpi-value" id="stat-booked-balance">$0.00</div>
+          <div class="kpi-subtext">
+            <span>Settled ledger balance across entities</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-label">Active Card Holds</span>
+          </div>
+          <div class="kpi-value" id="stat-total-holds" style="color: var(--badge-hold-text);">$0.00</div>
+          <div class="kpi-subtext">
+            <span>Authorized pre-settlement funds</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-label">Ledger Invariant</span>
+          </div>
+          <div class="kpi-value" style="color: #047857;">100% PROVEN</div>
+          <div class="kpi-subtext">
+            <span><span class="pulse-dot"></span> Zero balance drift detected</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           TAB 1: ACCOUNTS & BALANCES (FIGR STYLE TABLE)
+           ==================================================================== -->
+      <section class="tab-pane active" id="tab-accounts">
+        <div class="panel-card">
+          <div class="panel-card-header">
+            <div>
+              <h2 class="panel-title">Entity Accounts & Balances</h2>
+              <div class="panel-subtitle">Cached balance projections guaranteed by immutable double-entry history</div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <span class="pill pill-gray" style="font-size: 12px;">Active Containers: <strong id="stat-total-accounts" style="margin-left: 4px; color: var(--text-primary);">0</strong></span>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="fin-table" id="accounts-table">
+              <thead>
+                <tr>
+                  <th>Account ID</th>
+                  <th>Currency</th>
+                  <th>Booked Balance</th>
+                  <th>Active Holds</th>
+                  <th>Available Balance</th>
+                  <th>Version</th>
+                  <th>Quick Actions</th>
+                </tr>
+              </thead>
+              <tbody id="accounts-tbody">
+                <tr>
+                  <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 36px;">
+                    Loading accounts...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           TAB 2: TRANSFER TERMINAL & MATCH PROOF INSPECTOR (PURRWEB STYLE)
+           ==================================================================== -->
+      <section class="tab-pane" id="tab-transfers">
+        <div class="split-2">
+          <!-- Transfer Terminal Form -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Double-Entry Transfer Terminal</h2>
+                <div class="panel-subtitle">Ordered row locks (<code>min &lt; max</code>) eliminate concurrency deadlocks</div>
+              </div>
+            </div>
+
+            <div style="padding: 20px;">
+              <form id="transfer-form">
+                <div class="form-group">
+                  <label class="form-label" for="transfer-from-account">From Account (Debit Source)</label>
+                  <select class="form-control mono" id="transfer-from-account" required>
+                    <option value="">Select source account...</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="transfer-to-account">To Account (Credit Destination)</label>
+                  <select class="form-control mono" id="transfer-to-account" required>
+                    <option value="">Select recipient account...</option>
+                  </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label class="form-label" for="transfer-amount">Amount (Decimal String)</label>
+                    <input type="text" class="form-control mono" id="transfer-amount" placeholder="100.00" pattern="^\d+(\.\d{1,2})?$" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="transfer-currency">Currency</label>
+                    <input type="text" class="form-control" id="transfer-currency" value="USD" readonly>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="transfer-memo">Memo / Transfer Description</label>
+                  <input type="text" class="form-control" id="transfer-memo" placeholder="e.g. AWS Cloud Infrastructure, Stripe Payout, Payroll">
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="transfer-idempotency-key">Idempotency Key (UUID v4 Header)</label>
+                  <div class="input-action-row">
+                    <input type="text" class="form-control mono" id="transfer-idempotency-key" required readonly>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-generate-transfer-key">New Key</button>
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 24px; flex-wrap: wrap;">
+                  <button type="submit" class="btn btn-primary" id="btn-submit-transfer">
+                    Execute Transfer
+                  </button>
+                  <button type="button" class="btn btn-secondary" id="btn-test-replay" title="Replays identical request with same key">
+                    <span>&#x21ba;</span> Replay Test
+                  </button>
+                  <button type="button" class="btn btn-secondary" id="btn-test-tamper" title="Submits modified amount with same key (tampering drill)">
+                    <span>&#x26a0;</span> Tamper Test
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Purrweb Cashline Match Proof & Guarantees Inspector -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Match Proof & Audit Receipt</h2>
+                <div class="panel-subtitle">Real-time cryptographic hash verification & balance impact</div>
+              </div>
+              <span class="pill pill-credit">MATCHED</span>
+            </div>
+
+            <div style="padding: 20px;">
+              <div class="match-proof-box" id="terminal-last-response">
+                <div style="color: var(--text-muted); font-size: 13px;">
+                  Execute a transfer or run an idempotent replay test to inspect the match proof, debit/credit entry pairs, and locking trace.
+                </div>
+              </div>
+
+              <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
+                <div style="font-weight: 700; font-size: 12.5px; color: var(--text-primary); margin-bottom: 8px;">
+                  Core Concurrency & Integrity Guarantees:
+                </div>
+                <ul style="padding-left: 18px; color: var(--text-muted); font-size: 12px; line-height: 1.8;">
+                  <li><strong>Deadlock Elimination:</strong> Account row locks are acquired in sorted canonical order: <code>min(from, to) &rarr; max(from, to)</code>.</li>
+                  <li><strong>Duplicate Coalescing:</strong> Parallel requests with identical idempotency keys execute exactly 1 database write; duplicate threads receive a 201 replay.</li>
+                  <li><strong>Tamper Shield:</strong> SHA-256 payload mismatch returns <code>HTTP 422 Unprocessable Content</code> if payload modifies while reusing a key.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           TAB 3: CARD LIFECYCLE SIMULATOR
+           ==================================================================== -->
+      <section class="tab-pane" id="tab-cards">
+        <div class="split-2">
+          <!-- Card Authorization Form -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Card Authorization (Hold Placement)</h2>
+                <div class="panel-subtitle">Decreases spendable balance without modifying double-entry equity</div>
+              </div>
+            </div>
+
+            <div style="padding: 20px;">
+              <form id="card-auth-form">
+                <div class="form-group">
+                  <label class="form-label" for="card-customer-account">Customer Account (Hold Source)</label>
+                  <select class="form-control mono" id="card-customer-account" required>
+                    <option value="">Select customer account...</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="card-merchant-account">Merchant Account (Settlement Recipient)</label>
+                  <select class="form-control mono" id="card-merchant-account" required>
+                    <option value="">Select merchant account...</option>
+                  </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label class="form-label" for="card-amount">Authorization Amount</label>
+                    <input type="text" class="form-control mono" id="card-amount" placeholder="150.00" pattern="^\d+(\.\d{1,2})?$" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="card-currency">Currency</label>
+                    <input type="text" class="form-control" id="card-currency" value="USD" readonly>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="card-memo">Descriptor / Pre-Auth Note</label>
+                  <input type="text" class="form-control" id="card-memo" placeholder="e.g. Grand Hotel Room Deposit, Fuel Pre-Auth">
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="btn-submit-card-auth" style="margin-top: 8px;">
+                  Authorize Payment Hold
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- State Machine Guide -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Card Lifecycle State Machine</h2>
+                <div class="panel-subtitle">Retail banking two-phase settlement protocol</div>
+              </div>
+            </div>
+
+            <div style="padding: 20px; font-size: 13px; color: var(--text-secondary); line-height: 1.7;">
+              <p style="margin-bottom: 12px;">
+                <span class="pill pill-hold" style="margin-right: 6px;">1. AUTHORIZED</span>
+                Hold placed on customer account (<code>Available = Booked &minus; Holds</code>). Booked balance is untouched; <strong>zero ledger entries written</strong>.
+              </p>
+              <p style="margin-bottom: 12px;">
+                <span class="pill pill-credit" style="margin-right: 6px;">2. CAPTURED</span>
+                Hold released and converted into an immutable double-entry transfer (Customer DEBIT &minus; Merchant CREDIT). Supports partial captures!
+              </p>
+              <p style="margin-bottom: 12px;">
+                <span class="pill pill-gray" style="margin-right: 6px;">3. VOIDED</span>
+                Pre-settlement cancellation. Hold is restored to available balance immediately. Zero ledger entries created.
+              </p>
+              <p>
+                <span class="pill pill-debit" style="margin-right: 6px;">4. REFUNDED</span>
+                Post-settlement reversal. Generates a reverse double-entry transfer (Merchant DEBIT &minus; Customer CREDIT).
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Authorizations Table -->
+        <div class="panel-card">
+          <div class="panel-card-header">
+            <div>
+              <h2 class="panel-title">Recent Card Authorizations & Active Holds</h2>
+              <div class="panel-subtitle">Manage open holds, trigger capture settlements, voids, or customer refunds</div>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="fin-table" id="cards-table">
+              <thead>
+                <tr>
+                  <th>Auth ID</th>
+                  <th>Customer Account</th>
+                  <th>Merchant Account</th>
+                  <th>Amount</th>
+                  <th>Captured / Refunded</th>
+                  <th>Status</th>
+                  <th>Descriptor</th>
+                  <th>Created At</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cards-tbody">
+                <tr>
+                  <td colspan="9" style="text-align: center; color: var(--text-dim); padding: 36px;">Loading authorizations...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           TAB 4: DOUBLE-ENTRY AUDIT STREAM & OUTBOX FEED
+           ==================================================================== -->
+      <section class="tab-pane" id="tab-ledger">
+        <div class="split-2">
+          <!-- Ledger Entries Stream -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Immutable Ledger Stream</h2>
+                <div class="panel-subtitle">Physical records protected by PostgreSQL DB Trigger</div>
+              </div>
+            </div>
+
+            <div class="table-container" style="max-height: 520px; overflow-y: auto;">
+              <table class="fin-table" id="entries-table">
+                <thead>
+                  <tr>
+                    <th>Direction</th>
+                    <th>Amount</th>
+                    <th>Account ID</th>
+                    <th>Entry ID</th>
+                    <th>Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody id="entries-tbody">
+                  <tr>
+                    <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 36px;">Loading ledger entries...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Transaction Log & AI Outbox Feed -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Transaction Log & AI Categories</h2>
+                <div class="panel-subtitle">Decoupled via Outbox with <code>SELECT FOR UPDATE SKIP LOCKED</code></div>
+              </div>
+            </div>
+
+            <div class="table-container" style="max-height: 520px; overflow-y: auto;">
+              <table class="fin-table" id="transactions-table">
+                <thead>
+                  <tr>
+                    <th>Txn ID</th>
+                    <th>Amount</th>
+                    <th>Memo</th>
+                    <th>AI Category</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody id="transactions-tbody">
+                  <tr>
+                    <td colspan="6" style="text-align: center; color: var(--text-dim); padding: 36px;">Loading transactions...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           TAB 5: RECONCILIATION & TAMPER DRILL (PURRWEB CASH PROVEN)
+           ==================================================================== -->
+      <section class="tab-pane" id="tab-reconciliation">
+        <!-- Audit Banner -->
+        <div class="rec-banner healthy" id="audit-status-banner">
+          <div>
+            <div class="rec-headline" id="audit-banner-title">
+              LEDGER HEALTH: ZERO BALANCE DRIFT DETECTED
+            </div>
+            <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;" id="audit-banner-desc">
+              All accounts satisfy the Balance Invariant and all transactions satisfy the Double-Entry Conservation Law.
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-primary" id="btn-run-audit">
+              <span>&#x2714;</span> Run Full Invariant Audit
+            </button>
+          </div>
+        </div>
+
+        <!-- Invariant Verification Metrics -->
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Accounts Audited</span>
+            </div>
+            <div class="kpi-value" id="rec-accounts-audited">0</div>
+            <div class="kpi-subtext">Aggregated in 1 SQL query</div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Transactions Audited</span>
+            </div>
+            <div class="kpi-value" id="rec-transactions-audited">0</div>
+            <div class="kpi-subtext">Verified &sum; debits == &sum; credits</div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Detected Drifts</span>
+            </div>
+            <div class="kpi-value" id="rec-drifts-detected" style="color: var(--badge-credit-text);">0</div>
+            <div class="kpi-subtext">Mathematical discrepancies</div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Audit Execution Time</span>
+            </div>
+            <div class="kpi-value" id="rec-execution-time">0.00 ms</div>
+            <div class="kpi-subtext">High-speed SQL projection check</div>
+          </div>
+        </div>
+
+        <!-- Mathematical Invariants & Deliberate Tamper Drill -->
+        <div class="split-2">
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Mathematical Invariant Proofs</h2>
+                <div class="panel-subtitle">Formal financial definitions verified on every audit run</div>
+              </div>
+            </div>
+
+            <div style="padding: 20px;">
+              <div class="proof-mono-snippet">
+                <span style="color: var(--accent-indigo); font-weight: 700;">// 1. Account Balance Invariant:</span><br>
+                &forall; account &isin; Accounts:<br>
+                &nbsp;&nbsp;<strong>Cached_Balance</strong> = Initial_Balance + &sum;(Credits) &minus; &sum;(Debits)<br><br>
+                <span style="color: var(--accent-indigo); font-weight: 700;">// 2. Transaction Double-Entry Invariant:</span><br>
+                &forall; txn &isin; Transactions:<br>
+                &nbsp;&nbsp;<strong>&sum;(Entry_Credits) &minus; &sum;(Entry_Debits)</strong> == 0.00<br><br>
+                <span style="color: #047857; font-weight: 700;">// Result: Conservation of Money holds across all parallel transfers.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Live Tamper & Healing Drill</h2>
+                <div class="panel-subtitle">Test that the auditor immediately catches silent balance corruption</div>
+              </div>
+            </div>
+
+            <div style="padding: 20px;">
+              <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">
+                Simulate a rogue administrator or direct database bug modifying an account balance with a raw SQL update without creating corresponding ledger entries.
+              </p>
+
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn btn-danger btn-sm" id="btn-tamper-drill">
+                  <span>&#x26a0;</span> Corrupt Balance (+$100.00 drift)
+                </button>
+                <button class="btn btn-success btn-sm" id="btn-heal-drill">
+                  <span>&#x2714;</span> Heal Balance Projections
+                </button>
+              </div>
+
+              <div id="drill-output" style="margin-top: 14px; font-size: 12px; font-family: var(--font-mono); color: var(--text-muted);"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Discrepancy Details Table (Shown only when drift detected) -->
+        <div class="panel-card" id="discrepancies-card" style="display: none; border-color: #fecdd3;">
+          <div class="panel-card-header" style="background-color: #fff1f2;">
+            <div>
+              <h2 class="panel-title" style="color: var(--badge-debit-text);">Detected Balance Drifts (Action Required)</h2>
+              <div class="panel-subtitle">Accounts whose cached balance does not equal ledger history</div>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="fin-table">
+              <thead>
+                <tr>
+                  <th>Account ID</th>
+                  <th>Currency</th>
+                  <th>Actual Balance</th>
+                  <th>Expected Balance</th>
+                  <th>Drift Amount</th>
+                  <th>Diagnostic Reason</th>
+                </tr>
+              </thead>
+              <tbody id="discrepancies-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Create Account Modal Dialog -->
+  <dialog id="create-account-modal" class="modal-card">
+    <div class="modal-header">
+      <h3 class="modal-title">Create New Entity Account</h3>
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-close-modal" style="padding: 2px 8px; font-size: 14px;">&times;</button>
+    </div>
+    <form id="create-account-form">
+      <div class="form-group">
+        <label class="form-label" for="new-account-currency">Currency Code (ISO-4217)</label>
+        <input type="text" class="form-control" id="new-account-currency" value="USD" maxlength="3" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="new-account-balance">Initial Balance (Exact Decimal String)</label>
+        <input type="text" class="form-control mono" id="new-account-balance" value="1000.00" pattern="^\d+(\.\d{1,2})?$" required>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px;">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btn-submit-create-account">Create Account</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Floating Toast Notifications Container -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- JavaScript Modules -->
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

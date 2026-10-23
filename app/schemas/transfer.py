@@ -110,3 +110,28 @@ class TransferResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TransactionResponse(BaseModel):
+    """Response payload for listing transactions with AI categories."""
+
+    id: uuid.UUID
+    from_account_id: uuid.UUID | None = None
+    to_account_id: uuid.UUID
+    amount: str
+    status: str
+    memo: str | None = None
+    ai_category: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def format_amount(cls, v: object) -> str:
+        """Format Decimal amount to exact 2-decimal string representation."""
+        if isinstance(v, Decimal):
+            return f"{v:.2f}"
+        if isinstance(v, (int, float, str)):
+            return f"{Decimal(str(v)):.2f}"
+        return str(v)

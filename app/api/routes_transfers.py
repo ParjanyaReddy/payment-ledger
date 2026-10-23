@@ -10,11 +10,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.models.ledger_entry import LedgerEntry
+from app.models.transaction import Transaction
 from app.schemas.transfer import (
     LedgerEntryResponse,
+    TransactionResponse,
     TransferRequest,
     TransferResponse,
 )
@@ -160,3 +164,37 @@ async def create_transfer(
         status_code=status.HTTP_201_CREATED,
         content=response_data,
     )
+
+
+@router.get(
+    "",
+    response_model=list[TransactionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List recent transactions with AI categories",
+)
+async def list_transactions(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 50,
+    offset: int = 0,
+) -> list[Transaction]:
+    """List recent transactions ordered chronologically descending."""
+    stmt = select(Transaction).order_by(Transaction.created_at.desc()).limit(limit).offset(offset)
+    result = await db.scalars(stmt)
+    return list(result.all())
+
+
+@router.get(
+    "/entries",
+    response_model=list[LedgerEntryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List recent immutable ledger entries",
+)
+async def list_ledger_entries(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 50,
+    offset: int = 0,
+) -> list[LedgerEntry]:
+    """List recent immutable double-entry ledger rows."""
+    stmt = select(LedgerEntry).order_by(LedgerEntry.created_at.desc()).limit(limit).offset(offset)
+    result = await db.scalars(stmt)
+    return list(result.all())

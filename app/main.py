@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes_accounts import router as accounts_router
 from app.api.routes_cards import router as cards_router
@@ -52,6 +54,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount frontend static directory
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
 # Wire routers
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
@@ -60,12 +65,19 @@ app.include_router(cards_router, prefix="/api/v1")
 app.include_router(reconciliation_router, prefix="/api/v1")
 
 
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard_view() -> FileResponse:
+    """Serve real-time web auditor dashboard."""
+    return FileResponse("app/static/index.html")
+
+
 @app.get("/", tags=["Root"])
 async def root() -> dict[str, str]:
     """Root endpoint returning service identity and documentation link."""
     return {
         "service": "Payment Ledger & Real-Time Auditor API",
         "docs": "/docs",
+        "dashboard": "/dashboard",
         "health": "/api/v1/health",
         "ready": "/api/v1/ready",
     }

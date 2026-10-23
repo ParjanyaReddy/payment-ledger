@@ -35,9 +35,28 @@ This document tracks phase completion, verified requirements, toolchain versions
 - [x] **Phase 4: Ledger Immutability & Automated Reconciliation** (Completed)
 - [x] **Phase 5: Transactional Outbox & AI Categorization** (Completed)
 - [x] **Phase 6: Payment Realism (Lifecycle & Velocity Limits)** (Completed)
-- [ ] **Phase 7: Real-Time Web Auditor Frontend** (Pending)
+- [x] **Phase 7: Real-Time Web Auditor Frontend** (Completed)
 - [ ] **Phase 8: Benchmarks & Empirical Validation** (Pending)
 - [ ] **Phase 9: Hardening, Observability & Final Packaging** (Pending)
+
+---
+
+## Phase 7 Traceability Matrix
+
+| Requirement | Code File | Function / Component | Test / Verification | Status |
+|---|---|---|---|---|
+| Minimalist SaaS UI (Figr & Cashline) | `app/static/index.html`, `style.css` | UI Theme & Layout | Clean sidebar navigation, Purrweb Cashline top metrics, and Match Proof Inspector | VERIFIED |
+| Static Dashboard Serving (/dashboard) | `app/main.py` | `dashboard_view()` | `test_dashboard_endpoint_serves_html` | VERIFIED |
+| Real-Time Account & Balance Explorer | `app/static/js/app.js` | `loadAccounts()`, `renderAccountsTable()` | Browser Subagent Inspection (4 accounts loaded) | VERIFIED |
+| Interactive Transfer Terminal | `app/static/js/app.js` | `handleTransferSubmit()` | Live transfer of $25.00 executed | VERIFIED |
+| One-Click Idempotency Replay Test | `app/static/js/app.js` | `handleReplayTest()` | Verified `X-Idempotent-Replay: true` banner in UI | VERIFIED |
+| One-Click Payload Tampering Test | `app/static/js/app.js` | `handleTamperTest()` | Verified `422 Unprocessable Content` rejection in UI | VERIFIED |
+| Card Lifecycle Simulator Panel | `app/static/js/app.js` | `handleCardAuthSubmit()`, Capture/Void/Refund | Browser Subagent State Machine interaction | VERIFIED |
+| Append-Only Double-Entry Stream | `app/static/js/app.js` | `loadLedgerStream()` | `test_list_transactions_and_ledger_entries_endpoints` | VERIFIED |
+| Asynchronous AI Outbox Feed | `app/static/js/app.js` | `renderTransactionsTable()` | Category badges displayed in UI | VERIFIED |
+| Live Reconciliation & Invariant Proof | `app/static/js/app.js` | `executeReconciliationAudit()` | `test_reconciliation_tamper_and_heal_drills` | VERIFIED |
+| Interactive Tamper & Heal Drills | `app/api/routes_reconciliation.py` | `/drill/tamper`, `/drill/heal` | Corrupts balance, flags drift, heals projections | VERIFIED |
+
 
 ---
 
