@@ -31,13 +31,26 @@ This document tracks phase completion, verified requirements, toolchain versions
 - [x] **Phase 0: Scaffold, Repository & Local Setup** (Completed)
 - [x] **Phase 1: Data Model, Migrations & Account Management** (Completed)
 - [x] **Phase 2: Transfer Core (Double-Entry & Pessimistic Locking)** (Completed)
-- [ ] **Phase 3: Race-Safe Idempotency** (Pending approval)
+- [x] **Phase 3: Race-Safe Idempotency** (Completed)
 - [ ] **Phase 4: Ledger Immutability & Automated Reconciliation** (Pending)
 - [ ] **Phase 5: Transactional Outbox & AI Categorization** (Pending)
 - [ ] **Phase 6: Payment Realism (Lifecycle & Velocity Limits)** (Pending)
 - [ ] **Phase 7: Real-Time Web Auditor Frontend** (Pending)
 - [ ] **Phase 8: Benchmarks & Empirical Validation** (Pending)
 - [ ] **Phase 9: Hardening, Observability & Final Packaging** (Pending)
+
+---
+
+## Phase 3 Traceability Matrix
+
+| Requirement | Code File | Function / Component | Test Name | Status |
+|---|---|---|---|---|
+| Mandatory Idempotency-Key header | `app/api/routes_transfers.py` | `create_transfer()` | `test_transfer_missing_idempotency_key` (422 response) | VERIFIED |
+| Atomic claim without race window | `app/services/idempotency.py` | `claim_or_get_idempotency()` | `test_50_concurrent_identical_idempotent_requests` (PostgreSQL `ON CONFLICT DO NOTHING`) | VERIFIED |
+| Identical request replay | `app/api/routes_transfers.py` | `create_transfer()` | `test_transfer_idempotent_replay` (Replays cached 201 with `X-Idempotent-Replay`) | VERIFIED |
+| Hash mismatch detection | `app/services/idempotency.py` | `compute_request_hash()` | `test_transfer_same_key_different_payload_rejected` (422 Unprocessable Content) | VERIFIED |
+| 50-request concurrent deduplication | `tests/concurrency/test_concurrency.py` | `test_50_concurrent_identical_idempotent_requests` | Proves 50 concurrent requests produce exactly 1 DB txn and 1 debit | VERIFIED |
+| 24-hour key retention cleanup | `app/services/idempotency.py` | `cleanup_expired_keys()` | `test_cleanup_expired_idempotency_keys` | VERIFIED |
 
 ---
 

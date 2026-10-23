@@ -234,3 +234,96 @@ receiver.balance += amount
 > "In single-entry systems, money is just an updated number in an account record. If a bug decrements one account without incrementing the other, money vanishes.
 >
 > In double-entry systems, every transfer writes two immutable entries: a debit and a credit of equal value. For every transaction, the net sum of entries is strictly zero ($\sum \text{entries} = 0$). By verifying that total credits equal total debits across the system, we mathematically prove that no money was created or destroyed."
+
+---
+
+## Phase 3: Race-Safe Idempotency & Duplicate Request Coalescing
+
+### 1. Plain-English Overview
+Imagine you are buying an expensive flight ticket online. You click "Pay Now", but your internet connection drops for 2 seconds. The browser shows a spinner or network timeout error.
+You naturally click "Pay Now" again.
+Without **idempotency**, you will be charged twice for two tickets.
+Worse yet, imagine an eager customer rapidly double-clicking a "Transfer $500" button in their mobile app within 10 milliseconds. Two identical HTTP requests hit our servers at the exact same instant.
+Phase 3 protects against both scenarios:
+- **Client-Generated Key (`Idempotency-Key` header):** Every payment attempt must include a unique UUID.
+- **Atomic Database Claim (`ON CONFLICT DO NOTHING`):** When two requests with the same key arrive simultaneously, PostgreSQL allows only ONE to insert the row. The loser does NOT run the transfer; it waits for the winner to finish.
+- **Request Fingerprinting (SHA-256):** We hash the endpoint method, path, and request JSON body. If someone reuses an old idempotency key with different payment details (e.g., changing the amount from $10 to $1,000), we detect tampering and immediately reject it.
+- **Cached Replay:** The winner stores the exact HTTP response code and body in PostgreSQL. When retried, the API returns the original receipt instantly with `X-Idempotent-Replay: true` without touching account balances.
+
+---
+
+### 2. Walkthrough of the Core File: `app/services/idempotency.py`
+In `app/services/idempotency.py` (`CORE LOGIC: understand this file line by line`):
+
+```python
+# 1. Attempt atomic claim in PostgreSQL
+stmt = (
+    pg_insert(IdempotencyKey)
+    .values(key=key, request_hash=request_hash, status="IN_PROGRESS")
+    .on_conflict_do_nothing(index_elements=["key"])
+    .returning(IdempotencyKey.key)
+)
+result = await db.execute(stmt)
+if result.scalar_one_or_none() is not None:
+    return IdempotencyClaim(is_new=True) # Winner owns execution
+
+# 2. Loser enters poll loop for completion
+while elapsed <= max_wait_seconds:
+    record = await db.execute(
+        select(IdempotencyKey).where(IdempotencyKey.key == key)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+    if record.request_hash != request_hash:
+        raise IdempotencyHashMismatchError(...) # 422 if payload changed
+
+    if record.status == "COMPLETED":
+        return IdempotencyClaim(
+            is_new=False,
+            cached_status_code=record.response_code,
+            cached_body=record.response_body
+        ) # Replay cached response
+    await asyncio.sleep(0.05)
+```
+
+**Why this code is completely race-safe:**
+- Standard naive implementations check `SELECT * FROM keys WHERE key = X` and then `INSERT INTO keys`. Under concurrent execution, two threads both run `SELECT` at the same time, both find nothing, and both proceed to execute the transfer.
+- Our implementation uses `INSERT ... ON CONFLICT (key) DO NOTHING RETURNING key`. In PostgreSQL, this is an atomic single-engine operation guaranteed by the primary key unique index. Only one transaction can win.
+
+---
+
+### 3. The One Catastrophic Bug This Prevents
+**The Double-Charge via Network Timeout Retry or Rapid Double-Click.**
+- **The Bug:** A client pays $1,000. The server successfully transfers the money, but the network drops right before sending the HTTP 201 response back. The client retries. If the server does not recognize the duplicate key, the client is charged another $1,000 ($2,000 total).
+- **The Consequence:** Customer rage, disputed chargebacks, Visa/Mastercard fines, financial liability.
+- **How Phase 3 Prevents It:** In our concurrency tests, firing **50 simultaneous identical requests** with the same idempotency key results in exactly 1 transaction written to the database, 1 debit, and all 50 callers receive the identical 201 receipt with 0 double-charges.
+
+---
+
+### 4. Three Likely Interview Questions & Short Answers
+
+#### Q1: "Why must the idempotency record be saved in the same database and transaction as the transfer itself?"
+**Model Answer:**
+> "If you store idempotency keys in an external cache like Redis without two-phase commit, you face distributed state desynchronization.
+>
+> If Redis crashes after saving the key but before the database transfer commits, future retries will believe the payment succeeded when it never occurred. Conversely, if the transfer commits in PostgreSQL but Redis fails to save the cached response, a client retry will execute the transfer a second time (double-charge).
+>
+> Storing `idempotency_keys` in PostgreSQL allows the claim, the ledger entries, and the account balance updates to participate in the exact same ACID transaction."
+
+---
+
+#### Q2: "How do you handle a concurrent request arriving while the original request is still being processed?"
+**Model Answer:**
+> "There are three states:
+> 1. If the key doesn't exist, we atomically claim it as `IN_PROGRESS` and execute the transfer.
+> 2. If the key exists and is `COMPLETED`, we immediately return the cached status code and response payload with an `X-Idempotent-Replay: true` header.
+> 3. If the key exists and is `IN_PROGRESS`, a concurrent duplicate is currently running. We briefly poll the database (e.g., up to 3 seconds) for the in-flight transaction to finish. If it completes, we return the cached result. If it times out or encounters a permanent conflict, we return HTTP 409 Conflict instructing the client to retry."
+
+---
+
+#### Q3: "What happens if a malicious client reuses an existing idempotency key with a completely different payload?"
+**Model Answer:**
+> "We compute a deterministic SHA-256 fingerprint of the HTTP method, endpoint path, and normalized JSON payload.
+>
+> When a conflicting key is observed, we compare the incoming hash against `idempotency_keys.request_hash`. If they do not match, we immediately reject the request with HTTP 422 Unprocessable Content. This prevents idempotency key hijacking or accidental parameter collision."
+

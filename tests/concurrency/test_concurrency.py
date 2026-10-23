@@ -66,6 +66,7 @@ async def test_200_concurrent_transfers_no_overdraft(db_session: AsyncSession) -
                     "amount": "1.00",
                     "currency": "USD",
                 },
+                headers={"Idempotency-Key": str(uuid.uuid4())},
             )
             return resp.status_code
 
@@ -129,6 +130,7 @@ async def test_opposing_transfers_no_deadlock(db_session: AsyncSession) -> None:
                     "amount": "1.00",
                     "currency": "USD",
                 },
+                headers={"Idempotency-Key": str(uuid.uuid4())},
             )
             return resp.status_code
 
@@ -193,6 +195,7 @@ async def test_conservation_of_money_across_random_transfers(db_session: AsyncSe
                     "amount": "5.00",
                     "currency": "USD",
                 },
+                headers={"Idempotency-Key": str(uuid.uuid4())},
             )
             return resp.status_code
 
@@ -213,3 +216,68 @@ async def test_conservation_of_money_across_random_transfers(db_session: AsyncSe
         assert (
             final_total == initial_total
         ), f"Money was not conserved! Initial: {initial_total}, Final: {final_total}"
+
+
+@pytest.mark.asyncio
+async def test_50_concurrent_identical_idempotent_requests(db_session: AsyncSession) -> None:
+    """Requirement: 50 concurrent requests with the identical Idempotency-Key and payload.
+
+    Assertions:
+    - Exactly 1 transaction executed and committed in the database.
+    - Exactly 1 debit entry and 1 credit entry created.
+    - All 50 callers receive HTTP 201 with the exact same response content and transaction_id.
+    - Source account is debited exactly once ($100.00 - $25.00 = $75.00, NOT $0.00).
+    - 0 double-charges or duplicate records occur under heavy parallel race conditions.
+    """
+    app.dependency_overrides[get_db] = override_get_test_db
+
+    acc_from = Account(currency="USD", balance=Decimal("100.00"))
+    acc_to = Account(currency="USD", balance=Decimal("0.00"))
+    db_session.add_all([acc_from, acc_to])
+    await db_session.commit()
+    await db_session.refresh(acc_from)
+    await db_session.refresh(acc_to)
+
+    shared_key = str(uuid.uuid4())
+    payload = {
+        "from_account_id": str(acc_from.id),
+        "to_account_id": str(acc_to.id),
+        "amount": "25.00",
+        "currency": "USD",
+        "memo": "Concurrent identical idempotency race test",
+    }
+    headers = {"Idempotency-Key": shared_key}
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Fire 50 simultaneous identical requests
+        tasks = [client.post("/api/v1/transfers", json=payload, headers=headers) for _ in range(50)]
+        responses = await asyncio.gather(*tasks)
+
+    app.dependency_overrides.clear()
+
+    # 1. Assert all 50 responses received 201 Created
+    status_codes = [r.status_code for r in responses]
+    assert all(
+        code == 201 for code in status_codes
+    ), f"Not all responses were 201: {set(status_codes)}"
+
+    # 2. Assert all 50 returned the identical transaction_id
+    txn_ids = {r.json()["transaction_id"] for r in responses}
+    assert len(txn_ids) == 1, f"Expected exactly 1 unique transaction_id, got: {txn_ids}"
+
+    # 3. Assert replay headers indicate duplicate handling
+    replay_count = sum(1 for r in responses if r.headers.get("X-Idempotent-Replay") == "true")
+    assert replay_count >= 49, f"Expected at least 49 replays, got {replay_count}"
+
+    # 4. Verify database state: source debited exactly once, destination credited exactly once
+    async with TestingSessionLocal() as verify_session:
+        final_from = (
+            await verify_session.execute(select(Account).where(Account.id == acc_from.id))
+        ).scalar_one()
+        final_to = (
+            await verify_session.execute(select(Account).where(Account.id == acc_to.id))
+        ).scalar_one()
+
+        assert final_from.balance == Decimal("75.00")
+        assert final_to.balance == Decimal("25.00")

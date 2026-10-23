@@ -80,3 +80,16 @@ This document records the architectural choices, alternatives considered, and tr
 - **Context:** Running 200 concurrent tasks against `NullPool` opens 200 simultaneous socket connections, exceeding PostgreSQL's default `max_connections = 100` limit and raising `sorry, too many clients already`. Furthermore, function-scoped event loops on Windows leave orphaned asyncpg connection teardowns.
 - **Decision:** Configure pytest-asyncio to use `session` loop scope and configure `test_engine` with a bounded connection pool (`pool_size=25, max_overflow=25, pool_timeout=30.0`).
 - **Tradeoffs:** High-concurrency tests queue up on the pool and reuse connections efficiently, exactly mirroring production reverse proxy connection queuing.
+
+---
+
+### ADR 008: Database-Native Atomic Idempotency via `ON CONFLICT DO NOTHING`
+
+- **Status:** Accepted
+- **Context:** API retry traffic and client-side rapid double-clicks create race conditions that can charge accounts multiple times if duplicate requests execute in parallel.
+- **Decision:** Use client-generated UUID `Idempotency-Key` headers paired with PostgreSQL-native `INSERT INTO idempotency_keys ... ON CONFLICT (key) DO NOTHING RETURNING key` in the exact same database transaction as the financial transfer. In addition, compute a deterministic SHA-256 fingerprint of the request method, path, and payload to detect tampering (422 Unprocessable Content), and cache the completed HTTP status and body for identical replay (`X-Idempotent-Replay: true`).
+- **Alternatives Considered:**
+  1. *Redis Distributed Lock (Redlock):* Introducing an external cache risks split-brain state where Redis confirms a lock or key but PostgreSQL transfer fails (or vice versa), breaking ACID consistency.
+  2. *Application-Level `SELECT then INSERT`:* Vulnerable to race windows where two simultaneous requests both observe an empty key row before either inserts.
+- **Tradeoffs:** Adds an idempotency table lookup and insert per financial request, but guarantees provably zero duplicate charges and zero split-brain inconsistencies under concurrent retries.
+
